@@ -1,0 +1,47 @@
+{
+    "name": "@hellojohn/js",
+    "version": "1.0.0",
+    "description": "HelloJohn Identity Platform — Browser SDK",
+    "main": "./dist/index.js",
+    "module": "./dist/index.mjs",
+    "types": "./dist/index.d.ts",
+    "sideEffects": false,
+    "files": ["dist"],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.js"
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/dropDatabas3/hellojohn",
+        "directory": "sdks/js"
+    },
+    "scripts": {
+        "build": "tsup src/index.ts --format cjs,esm --dts",
+        "dev": "tsup --watch",
+        "test": "vitest run",
+        "prepublishOnly": "npm run build && npm test"
+    },
+    "keywords": [
+        "hellojohn",
+        "identity",
+        "oauth2",
+        "oidc",
+        "pkce",
+        "auth",
+        "authentication",
+        "jwt",
+        "mfa",
+        "totp"
+    ],
+    "author": "HelloJohn",
+    "license": "MIT",
+    "devDependencies": {
+        "tsup": "^8.0.1",
+        "typescript": "^5.3.3",
+        "vitest": "^4.0.18"
+    }
+}

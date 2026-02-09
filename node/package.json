@@ -1,0 +1,60 @@
+{
+  "name": "@hellojohn/node",
+  "version": "1.0.0",
+  "description": "HelloJohn Identity Platform — Node.js Server SDK",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "sideEffects": false,
+  "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dropDatabas3/hellojohn",
+    "directory": "sdks/node"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./express": {
+      "types": "./dist/express/index.d.ts",
+      "import": "./dist/express/index.mjs",
+      "require": "./dist/express/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "identity",
+    "oauth2",
+    "jwt",
+    "middleware",
+    "m2m",
+    "auth"
+  ],
+  "author": "HelloJohn",
+  "license": "MIT",
+  "dependencies": {
+    "jose": "^6.1.2"
+  },
+  "peerDependencies": {
+    "express": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.1",
+    "tsup": "^8.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

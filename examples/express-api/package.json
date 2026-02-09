@@ -1,0 +1,14 @@
+{
+  "name": "hellojohn-express-api-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example Express API protected with HelloJohn",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@hellojohn/node": "file:../../node",
+    "express": "^4.21.0"
+  }
+}

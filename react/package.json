@@ -1,0 +1,57 @@
+{
+    "name": "@hellojohn/react",
+    "version": "1.0.0",
+    "description": "HelloJohn Identity Platform — React SDK (components, hooks, SSR)",
+    "main": "./dist/index.js",
+    "module": "./dist/index.mjs",
+    "types": "./dist/index.d.ts",
+    "sideEffects": false,
+    "files": ["dist"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/dropDatabas3/hellojohn",
+        "directory": "sdks/react"
+    },
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.js"
+        },
+        "./server": {
+            "types": "./dist/server.d.ts",
+            "import": "./dist/server.mjs",
+            "require": "./dist/server.js"
+        }
+    },
+    "scripts": {
+        "build": "tsup src/index.ts src/server.ts --format cjs,esm --dts",
+        "dev": "tsup src/index.ts src/server.ts --format cjs,esm --dts --watch",
+        "clean": "rm -rf dist",
+        "test": "vitest run",
+        "prepublishOnly": "npm run build && npm test"
+    },
+    "keywords": [
+        "hellojohn", "react", "auth", "authentication", "identity",
+        "oauth2", "oidc", "mfa", "rbac", "i18n", "sign-in", "sign-up"
+    ],
+    "author": "HelloJohn",
+    "license": "MIT",
+    "peerDependencies": {
+        "react": ">=18",
+        "react-dom": ">=18"
+    },
+    "dependencies": {
+        "@hellojohn/js": "file:../js"
+    },
+    "devDependencies": {
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^16.3.2",
+        "@types/react": "^18.2.0",
+        "@types/react-dom": "^18.2.0",
+        "jsdom": "^28.0.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.0.0",
+        "vitest": "^4.0.18"
+    }
+}

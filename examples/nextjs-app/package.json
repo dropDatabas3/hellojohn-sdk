@@ -1,0 +1,19 @@
+{
+  "name": "hellojohn-nextjs-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example Next.js app with HelloJohn SSR authentication",
+  "scripts": {
+    "dev": "next dev --port 3003",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@hellojohn/js": "file:../../js",
+    "@hellojohn/react": "file:../../react",
+    "@hellojohn/node": "file:../../node",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
