@@ -156,13 +156,14 @@ export function SignIn({
         right: backgroundImage ? 0 : undefined,
         bottom: backgroundImage ? 0 : undefined,
         width: "100%",
+        minHeight: backgroundImage ? undefined : "100vh",
         display: "flex",
         alignItems: "center",
         justifyContent: justifyMap[formPosition],
-        padding: backgroundImage ? (formPosition === "center" ? "20px" : "20px 60px") : undefined,
+        padding: backgroundImage ? (formPosition === "center" ? "20px" : "20px 60px") : "20px",
         background: backgroundImage
             ? undefined
-            : (theme.colors.background.includes("gradient") ? theme.colors.background : undefined),
+            : theme.colors.background,
         fontFamily: theme.styles.fontFamily,
         zIndex: backgroundImage ? 9999 : undefined,
     };
@@ -504,8 +505,10 @@ export function SignIn({
 
     // Default: just the card
     return (
-        <div style={cardStyle}>
-            {formContent}
+        <div style={containerStyle}>
+            <div style={cardStyle}>
+                {formContent}
+            </div>
         </div>
     );
 }

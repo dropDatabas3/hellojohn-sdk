@@ -6,11 +6,49 @@ import { TokenManager } from "./token-manager"
 import { MFAClient, createMFAClient } from "./mfa"
 import { createFetchWrapper } from "./fetch-wrapper"
 import { decodeJWTPayload } from "./jwt"
-import { parseAPIError, MFARequiredError, NetworkError } from "./errors"
+import { parseAPIError, MFARequiredError, NetworkError, HelloJohnError } from "./errors"
 
 const CACHE_KEY_VERIFIER = "hj:verifier"
 const CACHE_KEY_STATE = "hj:state"
 const CACHE_KEY_NONCE = "hj:nonce"
+
+type SocialStartErrorBody = {
+    code?: string
+    error?: string
+    message?: string
+    error_description?: string
+    detail?: string
+}
+
+function parseSocialStartError(status: number, body: SocialStartErrorBody): HelloJohnError {
+    const rawCode = body.code || body.error || "social_start_failed"
+    const code = typeof rawCode === "string" ? rawCode : "social_start_failed"
+    const lowerCode = code.toLowerCase()
+
+    const rawMessage = body.error_description || body.message || body.detail || "Social login could not be started"
+    const message = typeof rawMessage === "string" && rawMessage.trim()
+        ? rawMessage.trim()
+        : "Social login could not be started"
+
+    const detail = typeof body.detail === "string" ? body.detail.toLowerCase() : ""
+    const lowerMessage = message.toLowerCase()
+    const redirectIssue = lowerCode === "redirect_uri_not_allowed"
+        || lowerCode === "invalid_redirect_uri"
+        || (lowerCode === "internal_server_error" && detail.includes("redirect_uri"))
+        || detail.includes("redirect_uri")
+        || lowerMessage.includes("redirect_uri not allowed")
+        || lowerMessage.includes("redirect uri not allowed")
+
+    if (redirectIssue) {
+        return new HelloJohnError(
+            "La URL de callback no esta permitida para este cliente. Configura redirect_uris y vuelve a intentar.",
+            "redirect_uri_not_allowed",
+            status,
+        )
+    }
+
+    return new HelloJohnError(message, code, status)
+}
 
 export class AuthClient {
     private domain: string
@@ -216,25 +254,78 @@ export class AuthClient {
             tenant_id: tenantSlug,
         })
 
-        sessionStorage.setItem("hj:social_login", "true")
+        const startURL = `${this.domain}/v2/auth/social/${provider}/start?${params.toString()}`
 
-        window.location.assign(`${this.domain}/v2/auth/social/${provider}/start?${params.toString()}`)
+        let preflightResp: Response
+        try {
+            preflightResp = await fetch(startURL, {
+                method: "GET",
+                redirect: "manual",
+            })
+        } catch {
+            // CORS-restricted deployments may block preflight fetches.
+            // Keep backward compatibility and continue with normal navigation.
+            sessionStorage.setItem("hj:social_login", "true")
+            window.location.assign(startURL)
+            return
+        }
+
+        // Browsers can return opaqueredirect when redirect headers are hidden.
+        if (preflightResp.type === "opaqueredirect") {
+            sessionStorage.setItem("hj:social_login", "true")
+            window.location.assign(startURL)
+            return
+        }
+
+        // Successful social start should return a redirect (302) to the provider.
+        if (preflightResp.status >= 300 && preflightResp.status < 400) {
+            sessionStorage.setItem("hj:social_login", "true")
+            const location = preflightResp.headers.get("Location")
+            window.location.assign(location || startURL)
+            return
+        }
+
+        if (!preflightResp.ok) {
+            const errBody = await preflightResp.json().catch(() => ({} as SocialStartErrorBody))
+            throw parseSocialStartError(preflightResp.status, errBody)
+        }
+
+        // If backend returns 2xx unexpectedly, continue with navigation.
+        sessionStorage.setItem("hj:social_login", "true")
+        window.location.assign(startURL)
     }
 
     isSocialCallback(url = window.location.href): boolean {
         const searchParams = new URL(url).searchParams
         const hasCode = searchParams.has("code")
-        const isSocial = sessionStorage.getItem("hj:social_login") === "true"
+        const hasError = searchParams.has("error")
         const hasVerifier = !!sessionStorage.getItem(CACHE_KEY_VERIFIER)
-        return hasCode && isSocial && !hasVerifier
+
+        // Check if backend marked this as social callback
+        const socialParam = searchParams.get("social") === "true"
+
+        // Also check sessionStorage as fallback (for backwards compatibility)
+        const isSocial = sessionStorage.getItem("hj:social_login") === "true" || socialParam
+
+        // A social callback can have either a code (success) or an error (failure redirect)
+        return (hasCode || (hasError && isSocial)) && !hasVerifier
     }
 
     async handleSocialCallback(url = window.location.href): Promise<void> {
         const searchParams = new URL(url).searchParams
+
+        // Check for error redirect from server (OAuth2 style)
+        const error = searchParams.get("error")
+        if (error) {
+            const description = searchParams.get("error_description") || "Social login failed"
+            sessionStorage.removeItem("hj:social_login")
+            throw new HelloJohnError(description, error)
+        }
+
         const code = searchParams.get("code")
 
         if (!code) {
-            throw new Error("No code found in URL for social callback")
+            throw new HelloJohnError("No code found in URL for social callback", "missing_code")
         }
 
         const resp = await fetch(`${this.domain}/v2/auth/social/exchange`, {
@@ -248,7 +339,11 @@ export class AuthClient {
 
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ error: "unknown" }))
-            throw new Error(`Social login exchange failed: ${err.error || resp.statusText}`)
+            throw new HelloJohnError(
+                err.error_description || err.message || "Social login exchange failed",
+                err.error || err.code || "exchange_failed",
+                resp.status
+            )
         }
 
         const data: TokenResponse = await resp.json()
@@ -322,8 +417,8 @@ export class AuthClient {
         })
 
         if (!resp.ok) {
-            const err = await resp.json()
-            throw new Error(err.error_description || err.message || "Registration failed")
+            const errBody = await resp.json().catch(() => ({}))
+            throw parseAPIError(resp.status, errBody)
         }
 
         const result: RegisterResponse = await resp.json()

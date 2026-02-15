@@ -13,8 +13,13 @@ export * from "./components/CountrySelect";
 export * from "./components/FormWrapper";
 export * from "./components/UserButton";
 export * from "./components/UserProfile";
+export * from "./components/SignInLink";
+export * from "./components/SignUpLink";
+export * from "./components/SignInButton";
+export * from "./components/SignUpButton";
 export * from "./components/MFAChallenge";
 export * from "./components/MFASetup";
+export * from "./components/AuthError";
 
 // Theme exports
 export {
@@ -35,6 +40,22 @@ export {
 
 // i18n exports
 export { useI18n, t, en, es, type Locale, type DeepPartial } from "./i18n";
+
+// Routing exports (used by pages and consumers for SPA navigation)
+export {
+    useRoutes,
+    useHJNavigate,
+    useSearchParam,
+    type AuthRoutes,
+    type NavigateFn,
+    type IntegrationMode,
+    DEFAULT_AUTH_BASE_PATH,
+    DEFAULT_ALLOWED_REDIRECTS,
+    normalizeInternalPath,
+    normalizeAuthBasePath,
+    resolveAllowedRedirects,
+    isAllowedRedirectPath,
+} from "./routing";
 
 // Simple logout helper - just call byeJohn() to logout!
 export { byeJohn } from "./helpers/logout";

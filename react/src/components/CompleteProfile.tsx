@@ -9,6 +9,8 @@ interface CompleteProfileProps {
     onComplete?: () => void;
     /** Redirect URL after completion (default: /) */
     redirectTo?: string;
+    /** Allow skipping required fields (default: false) */
+    allowSkip?: boolean;
 }
 
 /**
@@ -19,7 +21,7 @@ interface CompleteProfileProps {
  * The SDK automatically detects when this form is needed and can render it in the
  * callback page or as a modal overlay.
  */
-export function CompleteProfile({ onComplete, redirectTo = "/" }: CompleteProfileProps) {
+export function CompleteProfile({ onComplete, redirectTo = "/", allowSkip = false }: CompleteProfileProps) {
     const { config, completeProfile, user } = useAuth();
     const i18n = useI18n();
     const [formData, setFormData] = useState<Record<string, string>>({});
@@ -53,6 +55,14 @@ export function CompleteProfile({ onComplete, redirectTo = "/" }: CompleteProfil
         }
     };
 
+    const handleSkip = () => {
+        if (onComplete) {
+            onComplete();
+        } else {
+            window.location.href = redirectTo;
+        }
+    };
+
     // Filter to only required fields that are currently empty
     const missingFields = config?.custom_fields?.filter(field => {
         if (!field.required) return false;
@@ -79,12 +89,14 @@ export function CompleteProfile({ onComplete, redirectTo = "/" }: CompleteProfil
         display: "flex",
         height: "40px",
         width: "100%",
-        borderRadius: "6px",
-        border: "1px solid #e2e8f0",
-        backgroundColor: "white",
-        padding: "8px 12px",
+        borderRadius: "8px",
+        border: "1px solid #cbd5e1",
+        backgroundColor: "#ffffff",
+        padding: "10px 14px",
         fontSize: "14px",
         outline: "none",
+        transition: "all 0.2s ease",
+        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
     };
 
     const renderField = (field: { name: string; type: string; required: boolean; label?: string }) => {
@@ -136,6 +148,14 @@ export function CompleteProfile({ onComplete, redirectTo = "/" }: CompleteProfil
                             onChange={handleInputChange}
                             required={field.required}
                             style={commonInputStyle}
+                            onFocus={(e) => {
+                                e.target.style.borderColor = brandColor;
+                                e.target.style.boxShadow = `0 0 0 3px ${brandColor}20`;
+                            }}
+                            onBlur={(e) => {
+                                e.target.style.borderColor = "#cbd5e1";
+                                e.target.style.boxShadow = "0 1px 2px rgba(0, 0, 0, 0.05)";
+                            }}
                         />
                     </div>
                 );
@@ -145,13 +165,13 @@ export function CompleteProfile({ onComplete, redirectTo = "/" }: CompleteProfil
     return (
         <div style={{
             width: "100%",
-            maxWidth: "400px",
+            maxWidth: "420px",
             margin: "0 auto",
-            padding: "24px",
-            backgroundColor: "white",
-            borderRadius: "8px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-            border: "1px solid #f1f5f9",
+            padding: "32px",
+            backgroundColor: "#ffffff",
+            borderRadius: "12px",
+            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+            border: "1px solid #e2e8f0",
         }}>
             {/* Header */}
             <div style={{ textAlign: "center", marginBottom: "24px" }}>
@@ -197,7 +217,7 @@ export function CompleteProfile({ onComplete, redirectTo = "/" }: CompleteProfil
                         justifyContent: "center",
                         width: "100%",
                         height: "40px",
-                        borderRadius: "6px",
+                        borderRadius: "8px",
                         fontSize: "14px",
                         fontWeight: 500,
                         color: "white",
@@ -210,6 +230,32 @@ export function CompleteProfile({ onComplete, redirectTo = "/" }: CompleteProfil
                 >
                     {submitting ? i18n.completeProfile.submitting : i18n.completeProfile.submitButton}
                 </button>
+
+                {allowSkip && (
+                    <button
+                        type="button"
+                        onClick={handleSkip}
+                        disabled={submitting}
+                        style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            width: "100%",
+                            height: "40px",
+                            borderRadius: "8px",
+                            fontSize: "14px",
+                            fontWeight: 500,
+                            color: "#64748b",
+                            backgroundColor: "transparent",
+                            border: "none",
+                            cursor: submitting ? "not-allowed" : "pointer",
+                            opacity: submitting ? 0.6 : 1,
+                            marginTop: "8px",
+                        }}
+                    >
+                        Saltar por ahora
+                    </button>
+                )}
             </form>
         </div>
     );

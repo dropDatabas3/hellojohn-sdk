@@ -139,6 +139,15 @@ export interface Locale {
     enableMFA: string
     disableMFA: string
   }
+  authError: {
+    title: string
+    title_register: string
+    title_social: string
+    title_login: string
+    retryButton: string
+    hint: string
+    referenceLabel: string
+  }
   errors: {
     invalidCredentials: string
     emailNotVerified: string

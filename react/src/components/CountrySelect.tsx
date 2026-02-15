@@ -65,12 +65,14 @@ export function CountrySelect({
         display: "flex",
         height: "40px",
         width: "100%",
-        borderRadius: "6px",
-        border: "1px solid #e2e8f0",
-        backgroundColor: "white",
-        padding: "8px 12px",
+        borderRadius: "8px",
+        border: "1px solid #cbd5e1",
+        backgroundColor: "#ffffff",
+        padding: "10px 14px",
         fontSize: "14px",
         outline: "none",
+        transition: "all 0.2s ease",
+        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
     };
 
     return (
@@ -89,6 +91,12 @@ export function CountrySelect({
                     gap: "8px",
                     opacity: disabled ? 0.5 : 1,
                     textAlign: "left",
+                }}
+                onMouseEnter={(e) => {
+                    if (!disabled) e.currentTarget.style.borderColor = "#94a3b8";
+                }}
+                onMouseLeave={(e) => {
+                    if (!disabled) e.currentTarget.style.borderColor = "#cbd5e1";
                 }}
             >
                 {selectedCountry ? (

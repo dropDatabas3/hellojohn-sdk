@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "../context";
 import { useI18n } from "../i18n";
 import { ThemeName, getTheme } from "../lib/themes";
+import { useRoutes } from "../routing";
 
 export interface UserButtonProps {
     /** URL to navigate after sign out */
@@ -24,13 +25,14 @@ export interface UserButtonProps {
  * <UserButton afterSignOutUrl="/" theme="midnight" />
  */
 export function UserButton({
-    afterSignOutUrl = "/",
-    theme: themeName = "minimal",
+    afterSignOutUrl,
+    theme: themeName,
     size = 36,
     customStyles,
 }: UserButtonProps) {
-    const { isAuthenticated, isLoading, user, logout } = useAuth();
+    const { isAuthenticated, isLoading, user, logout, theme: providerTheme } = useAuth();
     const i18n = useI18n();
+    const routes = useRoutes();
     const [open, setOpen] = useState(false);
     const [systemDark, setSystemDark] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
@@ -51,7 +53,8 @@ export function UserButton({
         return () => document.removeEventListener("mousedown", handler);
     }, [open]);
 
-    const resolvedThemeName = themeName === "auto" ? (systemDark ? "midnight" : "minimal") : themeName;
+    const resolvedThemeInput = themeName || providerTheme;
+    const resolvedThemeName = resolvedThemeInput === "auto" ? (systemDark ? "midnight" : "minimal") : resolvedThemeInput;
     const theme = getTheme(resolvedThemeName as Exclude<ThemeName, "auto">);
     const borderRadius = customStyles?.borderRadius || theme.styles.borderRadius;
 
@@ -66,7 +69,7 @@ export function UserButton({
 
     const handleSignOut = () => {
         setOpen(false);
-        logout(afterSignOutUrl);
+        logout(afterSignOutUrl || routes.afterLogout);
     };
 
     return (

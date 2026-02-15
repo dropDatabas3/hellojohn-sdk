@@ -141,6 +141,15 @@ export const en: Locale = {
     enableMFA: "Enable two-factor authentication",
     disableMFA: "Disable two-factor authentication",
   },
+  authError: {
+    title: "Something went wrong",
+    title_register: "Account creation failed",
+    title_social: "Login failed",
+    title_login: "Login failed",
+    retryButton: "Back to home",
+    hint: "If this problem persists, contact your organization's administrator.",
+    referenceLabel: "Error ref.",
+  },
   errors: {
     invalidCredentials: "Invalid email or password",
     emailNotVerified: "Please verify your email first",

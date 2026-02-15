@@ -1,100 +1,134 @@
-# SDKs de HelloJohn
+# HelloJohn SDKs
 
-> **La Suite de Desarrollo para la Plataforma de Identidad HelloJohn**
+Official SDKs for integrating HelloJohn authentication across frontend and backend apps.
 
-Bienvenido al repositorio oficial de los **SDKs de HelloJohn**. Esta colección de librerías está diseñada para integrar autenticación segura, multi-tenant y escalable en tus aplicaciones de manera rápida y sin fricción.
+## Available SDKs
 
-Ya sea que estés construyendo una Single Page App (SPA), una API server-side, o una aplicación full-stack con Next.js, tenemos un SDK optimizado para tu stack tecnológico.
+| SDK | Package | Purpose | Status |
+|---|---|---|---|
+| JavaScript | `@hellojohn/js` | Browser auth client, OAuth flows, token/session management, MFA APIs | Stable |
+| React | `@hellojohn/react` | Provider, auth UI components, hooks, page system, themes, i18n | Stable |
+| Node.js | `@hellojohn/node` | Server auth utilities, JWT verification, middleware | Stable |
+| Go | `hellojohn-go` | Server auth utilities and middleware for Go services | Stable |
 
----
+## Dependency Graph
 
-## 📦 Ecosistema de SDKs
-
-| SDK | Paquete | Descripción | Estado |
-| :--- | :--- | :--- | :--- |
-| **[JavaScript Core](js/README.md)** | `@hellojohn/js` | El núcleo fundacional para el navegador. Maneja OAuth2 con PKCE, Gestión de Tokens, MFA y Almacenamiento Seguro. Cero dependencias runtime. | ✅ Estable |
-| **[React](react/README.md)** | `@hellojohn/react` | Componentes y hooks (`useAuth`, `<SignIn />`, `<UserButton />`) listos para usar. Incluye Temas, Internacionalización (i18n) y soporte SSR para Next.js. | ✅ Estable |
-| **[Node.js](node/README.md)** | `@hellojohn/node` | Verificación server-side y autenticación M2M (Machine-to-Machine). Incluye middleware para Express y validación de JWT con caché de JWKS. | ✅ Estable |
-| **[Go](go/README.md)** | `hellojohn-go` | Cliente nativo en Go para servicios backend. Middleware HTTP, cliente M2M y verificación JWT sin dependencias externas pesadas. | ✅ Estable |
-
----
-
-## 🎯 Principios de Diseño
-
-Nuestros SDKs están construidos con una mentalidad **"Developer First"**:
-
-*   **⚡ Zero Config**: Usamos defaults inteligentes. A menudo, solo necesitas el `domain` y `clientId` para comenzar.
-*   **🛡️ Type-Safe**: Escritos en TypeScript (y Go nativo) para ofrecer un autocompletado excelente y seguridad en tiempo de compilación.
-*   **🏢 Multi-Tenant Nativo**: Soporte de primera clase para multi-tenancy. Cambia de tenants o resuélvelos automáticamente desde subdominios o rutas.
-*   **🔒 Seguridad Sanity-Check**: Manejamos las partes difíciles de OAuth2 (PKCE, State, Nonce, Token Refresh, JWKS caching) por ti.
-*   **📦 Bundles Pequeños**: Arquitectura modular que asegura que solo empaquetes lo que realmente usas.
-
----
-
-## 🏗 Arquitectura
-
-El ecosistema de SDKs está estructurado en capas para asegurar consistencia y mantenibilidad:
-
-```mermaid
-graph TD
-    subgraph "Browser / Cliente"
-        React["@hellojohn/react"] --> JS["@hellojohn/js"]
-        Vue["@hellojohn/vue (Planeado)"] --> JS
-        JS -->|OAuth2 / PKCE| API
-    end
-
-    subgraph "Server Side"
-        Node["@hellojohn/node"] -->|JWKS / M2M| API
-        Go["hellojohn-go"] -->|JWKS / M2M| API
-    end
-
-    subgraph "Plataforma HelloJohn"
-        API["HelloJohn API (v2)"]
-    end
+```text
+@hellojohn/react ---> @hellojohn/js
+@hellojohn/node  ---> standalone
+hellojohn-go     ---> standalone
 ```
 
-### Capacidades Core
+## Quick Selection Guide
 
-*   **Autenticación**: Login con Credenciales, Proveedores Sociales (Google) y Magic Links (Planeado).
-*   **Gestión de Sesión**: Renovación automática de tokens, abstracción de almacenamiento seguro (Local/Session/Cookie/Memory).
-*   **MFA (Multi-Factor)**: Soporte completo para enrolamiento y flujos de desafío TOTP.
-*   **RBAC (Role-Based Access Control)**: Utilidades para verificar Roles y Permisos tanto en cliente como en servidor.
-*   **Machine-to-Machine (M2M)**: Soporte para flujo `client_credentials` para comunicación servicio-a-servicio.
+| Need | Use |
+|---|---|
+| Vanilla JS app | `@hellojohn/js` |
+| React app with own UI | `@hellojohn/react` components/hooks |
+| React app with minimal auth routing code | `@hellojohn/react/pages` |
+| Next.js server side cookie/session read | `@hellojohn/react/server` |
+| API/service level JWT enforcement in Node | `@hellojohn/node` |
+| API/service level JWT enforcement in Go | `hellojohn-go` |
 
----
+## React SDK Summary
 
+The React SDK now supports two integration modes plus a hybrid migration strategy.
 
+### 1) Advanced mode
 
-## 🚀 Comenzando
+Best when routes are explicit and controlled by app structure.
 
-Elige tu camino:
+Typical setup:
+- `app/login/page.tsx` -> `LoginPage`
+- `app/register/page.tsx` -> `RegisterPage`
+- `app/forgot-password/page.tsx` -> `ForgotPasswordPage`
+- `app/reset-password/page.tsx` -> `ResetPasswordPage`
+- `app/callback/page.tsx` -> `CallbackPage`
 
-### 1. Frontend: React / Next.js
-Instala las dependencias:
+Each page can be a one-line re-export from `@hellojohn/react/pages`.
+
+### 2) Quick mode
+
+Best for fastest onboarding.
+
+Typical setup:
+- One catch-all route: `app/auth/[[...flow]]/page.tsx`
+- Render `AuthFlowPage`
+- Configure provider with `mode="quick"` and `authBasePath="/auth"`
+
+`AuthFlowPage` resolves:
+- `login`
+- `register`
+- `forgot-password`
+- `reset-password`
+- `callback`
+
+### 3) Hybrid mode
+
+Use both at once during migration/testing:
+- Keep legacy pages alive
+- Add catch-all quick route
+- Switch behavior via `routes` + `mode` (often env based)
+
+## React SDK: Dynamic Auth Navigation
+
+The React SDK includes route-aware auth navigation components:
+
+- `SignInLink`
+- `SignUpLink`
+- `SignInButton`
+- `SignUpButton`
+
+These read provider routes (`routes.login`, `routes.register`) and can use SPA navigation through provider `navigate`.
+
+This eliminates hardcoded `/login` or `/register` values in consumer UIs.
+
+## React SDK: Session Components
+
+- `UserButton` uses provider routes for logout destination by default (`routes.afterLogout`).
+- Logout updates local auth state immediately before remote logout navigation, so UI does not require manual refresh to reflect sign out.
+
+## React SDK: Security primitives
+
+Routing exports include:
+- `normalizeInternalPath`
+- `normalizeAuthBasePath`
+- `resolveAllowedRedirects`
+- `isAllowedRedirectPath`
+- `DEFAULT_AUTH_BASE_PATH`
+- `DEFAULT_ALLOWED_REDIRECTS`
+
+Use them to enforce internal-only redirects and reduce open-redirect risk.
+
+## React SDK Entry Points
+
+| Entry | Import | Use |
+|---|---|---|
+| Main | `@hellojohn/react` | Provider, components, hooks, routing, i18n, themes |
+| Pages | `@hellojohn/react/pages` | Prebuilt page wrappers and `AuthFlowPage` |
+| Server | `@hellojohn/react/server` | Server cookie/session utility |
+
+For full React docs, see `sdks/react/README.md`.
+
+## Build and Test
+
 ```bash
-npm install @hellojohn/react @hellojohn/js
+# JavaScript SDK
+cd sdks/js
+npm run build
+npm test
+
+# React SDK
+cd sdks/react
+npm run build
+npm test
+
+# Node SDK
+cd sdks/node
+npm run build
+npm test
 ```
-👉 [Lee la Guía de React](react/README.md)
 
-### 2. Backend: Node.js / Express
-Para proteger tus rutas y APIs:
-```bash
-npm install @hellojohn/node
-```
-👉 [Lee la Guía de Node.js](node/README.md)
+## License
 
-### 3. Backend: Go
-Para servicios de alto rendimiento en Go:
-```bash
-go get github.com/dropDatabas3/hellojohn-go
-```
-👉 [Lee la Guía de Go](go/README.md)
-
-### 4. Otros Frameworks (Vue, Svelte, Angular, Vanilla JS)
-Usa el cliente core sin dependencias de UI:
-```bash
-npm install @hellojohn/js
-```
-👉 [Lee la Guía de JavaScript Core](js/README.md)
-
-
+MIT
