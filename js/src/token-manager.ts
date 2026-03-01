@@ -116,16 +116,17 @@ export class TokenManager {
 
     const payload = decodeJWTPayload(tokens.access_token)
     if (!payload) return null
+    const { sub, email, name, ...restPayload } = payload
 
     return {
       accessToken: tokens.access_token,
       idToken: tokens.id_token,
       refreshToken: tokens.refresh_token,
       user: {
-        sub: payload.sub,
-        email: payload.email,
-        name: payload.name,
-        ...payload,
+        ...restPayload,
+        sub,
+        email,
+        name,
       },
       expiresAt: payload.exp,
     }

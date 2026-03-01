@@ -28,11 +28,18 @@ export class TokenError extends HelloJohnError {
 }
 
 export class MFARequiredError extends HelloJohnError {
+  public mfaToken: string
   public challengeId: string
-  constructor(challengeId: string) {
+  public availableFactors: string[]
+  public preferredFactor?: string
+  constructor(mfaToken: string, availableFactors: string[] = [], preferredFactor?: string) {
     super("MFA verification required", "mfa_required", 403)
     this.name = "MFARequiredError"
-    this.challengeId = challengeId
+    this.mfaToken = mfaToken
+    // Backward-compatible alias used by old flows.
+    this.challengeId = mfaToken
+    this.availableFactors = availableFactors
+    this.preferredFactor = preferredFactor
   }
 }
 
@@ -48,8 +55,14 @@ export function parseAPIError(status: number, body: any): HelloJohnError {
   const message = body?.error_description || body?.message || body?.error || "Unknown error"
   const code = body?.error || "api_error"
 
-  if (code === "mfa_required" && body?.challenge_id) {
-    return new MFARequiredError(body.challenge_id)
+  const mfaToken = body?.mfa_token || body?.challenge_id
+  const availableFactors = Array.isArray(body?.available_factors)
+    ? body.available_factors.filter((factor: unknown): factor is string => typeof factor === "string")
+    : []
+  const preferredFactor = typeof body?.preferred_factor === "string" ? body.preferred_factor : undefined
+
+  if (code === "mfa_required" && typeof mfaToken === "string" && mfaToken.trim() !== "") {
+    return new MFARequiredError(mfaToken, availableFactors, preferredFactor)
   }
 
   if (status === 401) return new AuthenticationError(message, code, status)

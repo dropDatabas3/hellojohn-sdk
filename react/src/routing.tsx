@@ -118,8 +118,25 @@ const defaultNavigate: NavigateFn = (path: string) => {
 
 // --- Contexts ---
 
-const RoutesContext = createContext<AuthRoutes>(DEFAULT_ROUTES);
-const NavigateContext = createContext<NavigateFn>(defaultNavigate);
+type HelloJohnRoutingGlobal = typeof globalThis & {
+    __hellojohnRoutesContext__?: React.Context<AuthRoutes>;
+    __hellojohnNavigateContext__?: React.Context<NavigateFn>;
+};
+
+const helloJohnRoutingGlobal = globalThis as HelloJohnRoutingGlobal;
+const RoutesContext =
+    helloJohnRoutingGlobal.__hellojohnRoutesContext__ ??
+    createContext<AuthRoutes>(DEFAULT_ROUTES);
+const NavigateContext =
+    helloJohnRoutingGlobal.__hellojohnNavigateContext__ ??
+    createContext<NavigateFn>(defaultNavigate);
+
+if (!helloJohnRoutingGlobal.__hellojohnRoutesContext__) {
+    helloJohnRoutingGlobal.__hellojohnRoutesContext__ = RoutesContext;
+}
+if (!helloJohnRoutingGlobal.__hellojohnNavigateContext__) {
+    helloJohnRoutingGlobal.__hellojohnNavigateContext__ = NavigateContext;
+}
 
 // --- Provider (used internally by AuthProvider) ---
 
@@ -165,4 +182,3 @@ export function useSearchParam(key: string): string | null {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get(key);
 }
-

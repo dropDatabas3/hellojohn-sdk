@@ -1,0 +1,22 @@
+{
+  "name": "@hellojohn/sdk-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "js",
+    "react",
+    "node",
+    "vue",
+    "react-native"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "type-check": "npm run type-check --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

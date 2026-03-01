@@ -8,7 +8,18 @@ export { en, es }
 
 const builtInLocales: Record<string, Locale> = { en, es }
 
-const I18nContext = createContext<Locale>(en)
+type HelloJohnI18nGlobal = typeof globalThis & {
+  __hellojohnI18nContext__?: React.Context<Locale>
+}
+
+const helloJohnI18nGlobal = globalThis as HelloJohnI18nGlobal
+const I18nContext =
+  helloJohnI18nGlobal.__hellojohnI18nContext__ ??
+  createContext<Locale>(en)
+
+if (!helloJohnI18nGlobal.__hellojohnI18nContext__) {
+  helloJohnI18nGlobal.__hellojohnI18nContext__ = I18nContext
+}
 
 function deepMerge<T extends Record<string, any>>(base: T, overrides: DeepPartial<T>): T {
   const result = { ...base }

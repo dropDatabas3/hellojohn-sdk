@@ -232,7 +232,7 @@ const user = await auth.getUser();
 // Check authentication state (synchronous — checks stored token expiry)
 const loggedIn = auth.isAuthenticated();
 
-// Logout — clears tokens locally and redirects
+// Logout — clears tokens locally, calls unified logout endpoint and redirects
 auth.logout('/login');
 
 // Logout from all devices (server-side session invalidation)
@@ -629,7 +629,8 @@ Endpoints called by the SDK against the HelloJohn server:
 | `GET` | `/v2/auth/social/{provider}/start` | `loginWithSocialProvider()` |
 | `POST` | `/v2/auth/social/exchange` | `handleSocialCallback()` |
 | `GET` | `/userinfo` | `getUser()` |
-| `POST` | `/v2/session/logout` | `logout()` |
+| `GET` | `/v2/csrf` | `logout()` (internal) |
+| `POST` | `/v2/auth/logout` | `logout()` |
 | `POST` | `/v2/auth/logout-all` | `logoutAll()` |
 | `GET` | `/v2/auth/providers` | `getProviders()` |
 | `POST` | `/v2/auth/forgot` | `forgotPassword()` |

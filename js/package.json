@@ -22,6 +22,8 @@
     "scripts": {
         "build": "tsup src/index.ts --format cjs,esm --dts",
         "dev": "tsup --watch",
+        "type-check": "tsc --noEmit",
+        "check:secure-routes": "node scripts/check-secure-routes.mjs",
         "test": "vitest run",
         "prepublishOnly": "npm run build && npm test"
     },

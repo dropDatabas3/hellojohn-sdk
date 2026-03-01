@@ -32,7 +32,9 @@
     "scripts": {
         "build": "tsup",
         "dev": "tsup --watch",
+        "type-check": "tsc --noEmit",
         "clean": "rm -rf dist",
+        "check:secure-routes": "node scripts/check-secure-routes.mjs",
         "test": "vitest run",
         "prepublishOnly": "npm run build && npm test"
     },

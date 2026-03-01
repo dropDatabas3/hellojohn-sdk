@@ -11,6 +11,11 @@ export type {
     RegisterResponse,
     AuthConfig,
     CustomFieldSchema,
+    PasswordPolicy,
+    ProviderStatus,
+    MFAMethodType,
+    MFAMethod,
+    MFARequiredResult,
 } from "./types"
 
 // Storage adapters
@@ -30,7 +35,14 @@ export { decodeJWTPayload, isTokenExpired, getTokenExpiresIn } from "./jwt"
 export type { JWTPayload } from "./jwt"
 
 // MFA
-export type { MFAClient, MFAEnrollResult, MFAChallengeResult, MFARecoveryResult } from "./mfa"
+export type {
+    MFAClient,
+    MFAEnrollResult,
+    MFAChallengeResult,
+    MFARecoveryResult,
+    MFASendChallengeResult,
+    MFAChallengeState,
+} from "./mfa"
 
 // Errors
 export {
@@ -46,3 +58,7 @@ export { createFetchWrapper } from "./fetch-wrapper"
 
 // PKCE utilities (advanced)
 export { generateCodeVerifier, generateCodeChallenge } from "./pkce"
+
+// Passwordless
+export type { PasswordlessClient, AuthResult as PasswordlessAuthResult } from "./passwordless"
+export { createPasswordlessClient } from "./passwordless"

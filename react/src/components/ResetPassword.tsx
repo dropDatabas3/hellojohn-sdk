@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../context";
 import { useI18n, t } from "../i18n";
 import { ThemeName, getTheme } from "../lib/themes";
+import { PasswordPolicy } from "@hellojohn/js";
+import { PasswordRequirements, evaluatePasswordPolicy, hasVisiblePasswordRequirements, DEFAULT_PASSWORD_POLICY, PasswordRequirement } from "./PasswordRequirements";
 
 export interface ResetPasswordProps {
     /** The reset token from the URL (required) */
@@ -25,7 +27,7 @@ export interface ResetPasswordProps {
         primaryColor?: string;
         borderRadius?: string;
     };
-    /** Minimum password length (default: 6) */
+    /** Minimum password length when policy is unavailable (default: 8) */
     minPasswordLength?: number;
 }
 
@@ -39,7 +41,7 @@ export function ResetPassword({
     formPosition = "center",
     glassmorphism = false,
     customStyles,
-    minPasswordLength = 6,
+    minPasswordLength = DEFAULT_PASSWORD_POLICY.min_length,
 }: ResetPasswordProps) {
     const { client, config } = useAuth();
     const i18n = useI18n();
@@ -53,6 +55,9 @@ export function ResetPassword({
     const [mounted, setMounted] = useState(false);
     const [systemDark, setSystemDark] = useState(false);
     const [shake, setShake] = useState(false);
+    const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy>(DEFAULT_PASSWORD_POLICY);
+    const [passwordPolicyConfigured, setPasswordPolicyConfigured] = useState(false);
+    const [isPasswordFocused, setIsPasswordFocused] = useState(false);
 
     useEffect(() => {
         setMounted(true);
@@ -61,10 +66,40 @@ export function ResetPassword({
         }
     }, []);
 
+    useEffect(() => {
+        let cancelled = false;
+        const loadPasswordPolicy = async () => {
+            if (!client || typeof client.getPasswordPolicy !== "function") return;
+            try {
+                const policy = await client.getPasswordPolicy();
+                if (!cancelled && policy) {
+                    setPasswordPolicy({ ...DEFAULT_PASSWORD_POLICY, ...policy });
+                    setPasswordPolicyConfigured(Boolean(policy.configured));
+                }
+            } catch (err) {
+                console.warn("Failed to load password policy", err);
+                setPasswordPolicyConfigured(false);
+            }
+        };
+        void loadPasswordPolicy();
+        return () => { cancelled = true; };
+    }, [client]);
+
     const resolvedThemeName = themeName === "auto" ? (systemDark ? "midnight" : "minimal") : themeName;
     const theme = getTheme(resolvedThemeName as Exclude<ThemeName, "auto">);
     const primaryColor = customStyles?.primaryColor || config?.primary_color || theme.colors.accent;
     const borderRadius = customStyles?.borderRadius || theme.styles.borderRadius;
+
+    const passwordRules = passwordPolicyConfigured
+        ? evaluatePasswordPolicy(password, "", "", passwordPolicy)
+        : [];
+
+    const showPasswordRequirements = passwordPolicyConfigured && hasVisiblePasswordRequirements(passwordPolicy);
+    const effectiveMinPasswordLength =
+        passwordPolicy.min_length > 0 ? passwordPolicy.min_length : minPasswordLength;
+    const newPasswordPlaceholder = t(i18n.resetPassword.newPasswordPlaceholder, { min: String(effectiveMinPasswordLength) });
+
+    const canSubmit = password && confirmPassword && password === confirmPassword && (!passwordPolicyConfigured || !showPasswordRequirements || passwordRules.filter(r => r.visible).every((rule) => rule.ok));
 
     const triggerShake = () => {
         setShake(true);
@@ -81,8 +116,8 @@ export function ResetPassword({
             return;
         }
 
-        if (password.length < minPasswordLength) {
-            setError(t(i18n.resetPassword.passwordMinLength, { min: String(minPasswordLength) }));
+        if (password.length < effectiveMinPasswordLength) {
+            setError(t(i18n.resetPassword.passwordMinLength, { min: String(effectiveMinPasswordLength) }));
             triggerShake();
             return;
         }
@@ -318,7 +353,9 @@ export function ResetPassword({
                                 type={showPassword ? "text" : "password"}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder={i18n.resetPassword.newPasswordPlaceholder}
+                                onFocus={() => setIsPasswordFocused(true)}
+                                onBlur={() => setIsPasswordFocused(false)}
+                                placeholder={newPasswordPlaceholder}
                                 style={inputStyle}
                                 required
                             />
@@ -335,6 +372,8 @@ export function ResetPassword({
                                 type={showConfirmPassword ? "text" : "password"}
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
+                                onFocus={() => setIsPasswordFocused(true)}
+                                onBlur={() => setIsPasswordFocused(false)}
                                 placeholder={i18n.resetPassword.confirmPasswordPlaceholder}
                                 style={inputStyle}
                                 required
@@ -345,7 +384,7 @@ export function ResetPassword({
                         </div>
                     </div>
 
-                    <button type="submit" disabled={submitting} style={buttonStyle}>
+                    <button type="submit" disabled={submitting || !canSubmit} style={buttonStyle}>
                         {submitting ? (
                             <>
                                 <svg style={{ marginRight: "8px", animation: "spin 1s linear infinite" }} width="18" height="18" fill="none" viewBox="0 0 24 24">
@@ -366,3 +405,21 @@ export function ResetPassword({
         </div>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

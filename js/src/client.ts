@@ -1,5 +1,18 @@
 import { generateCodeChallenge, generateCodeVerifier, generateState } from "./pkce"
-import { AuthClientOptions, LoginOptions, TokenResponse, User, RegisterOptions, RegisterResponse, AuthConfig } from "./types"
+import {
+    AuthClientOptions,
+    LoginOptions,
+    TokenResponse,
+    User,
+    RegisterOptions,
+    RegisterResponse,
+    AuthConfig,
+    PasswordPolicy,
+    ProviderStatus,
+    MFAMethod,
+    MFAMethodType,
+    MFARequiredResult,
+} from "./types"
 import { StorageAdapter, localStorageAdapter } from "./storage"
 import { AuthEventEmitter, AuthEvent, AuthSession, AuthEventCallback } from "./event-emitter"
 import { TokenManager } from "./token-manager"
@@ -7,10 +20,18 @@ import { MFAClient, createMFAClient } from "./mfa"
 import { createFetchWrapper } from "./fetch-wrapper"
 import { decodeJWTPayload } from "./jwt"
 import { parseAPIError, MFARequiredError, NetworkError, HelloJohnError } from "./errors"
+import { PasswordlessClient, createPasswordlessClient } from "./passwordless"
 
 const CACHE_KEY_VERIFIER = "hj:verifier"
 const CACHE_KEY_STATE = "hj:state"
 const CACHE_KEY_NONCE = "hj:nonce"
+
+const SDK_ROUTES = {
+    AUTH_LOGOUT: "/v2/auth/logout",
+    AUTH_LOGOUT_ALL: "/v2/auth/logout-all",
+    CSRF: "/v2/csrf",
+    SESSION_TOKEN: "/v2/session/token", // Reserved for session->JWT bridge adoption in SDK.
+} as const
 
 type SocialStartErrorBody = {
     code?: string
@@ -50,6 +71,52 @@ function parseSocialStartError(status: number, body: SocialStartErrorBody): Hell
     return new HelloJohnError(message, code, status)
 }
 
+type LoginMFAResponse = {
+    mfa_required?: boolean
+    mfa_token?: string
+    available_factors?: unknown
+    preferred_factor?: unknown
+}
+
+function toMFAMethodType(value: unknown): MFAMethodType | null {
+    if (value !== "totp" && value !== "sms" && value !== "email") {
+        return null
+    }
+    return value
+}
+
+function methodLabel(type: MFAMethodType): string {
+    if (type === "totp") return "Authenticator App"
+    if (type === "sms") return "SMS"
+    return "Email"
+}
+
+function mapFactorList(rawFactors: unknown): MFAMethodType[] {
+    if (!Array.isArray(rawFactors)) return []
+    return rawFactors
+        .map((factor) => toMFAMethodType(factor))
+        .filter((factor): factor is MFAMethodType => factor !== null)
+}
+
+function mapMethods(factors: MFAMethodType[]): MFAMethod[] {
+    return factors.map((factor) => ({ type: factor, label: methodLabel(factor) }))
+}
+
+function isMFARequiredResponse(payload: unknown): payload is Required<Pick<LoginMFAResponse, "mfa_required" | "mfa_token">> & LoginMFAResponse {
+    if (typeof payload !== "object" || payload === null) return false
+    const candidate = payload as LoginMFAResponse
+    return candidate.mfa_required === true && typeof candidate.mfa_token === "string" && candidate.mfa_token.trim() !== ""
+}
+
+function isMFARequiredResult(value: User | MFARequiredResult): value is MFARequiredResult {
+    return (
+        typeof value === "object" &&
+        value !== null &&
+        "requiresMFA" in value &&
+        (value as MFARequiredResult).requiresMFA === true
+    )
+}
+
 export class AuthClient {
     private domain: string
     private clientID: string
@@ -63,6 +130,9 @@ export class AuthClient {
 
     /** MFA operations (enroll, verify, challenge, disable, recovery) */
     public mfa: MFAClient
+
+    /** Passwordless operations (Magic Links, OTPs) */
+    public passwordless: PasswordlessClient
 
     constructor(options: AuthClientOptions) {
         this.domain = options.domain.replace(/\/$/, "")
@@ -85,7 +155,16 @@ export class AuthClient {
         this.tokenManager.initialize()
 
         // MFA sub-client
-        this.mfa = createMFAClient(this.domain, () => this.getAccessToken())
+        this.mfa = createMFAClient(this.domain, {
+            getAccessToken: () => this.getAccessToken(),
+            onTokens: (tokenData) => {
+                this.tokenManager.setTokens(tokenData)
+                this.emitter.emit("SIGNED_IN", this.tokenManager.buildSession())
+            },
+        })
+
+        // Passwordless sub-client
+        this.passwordless = createPasswordlessClient(this.domain, this.clientID, this.tenantID)
     }
 
     // --- Event System ---
@@ -142,6 +221,29 @@ export class AuthClient {
         }
         this.cachedConfig = await resp.json()
         return this.cachedConfig!
+    }
+
+    async getPasswordPolicy(tenantID?: string): Promise<PasswordPolicy> {
+        let resolvedTenantID = tenantID || this.tenantID
+
+        if (!resolvedTenantID) {
+            const config = await this.getTenantConfig().catch(() => null)
+            resolvedTenantID = config?.tenant_slug
+        }
+
+        const url = new URL(`${this.domain}/v2/auth/password-policy`)
+        if (resolvedTenantID) {
+            url.searchParams.set("tenant_id", resolvedTenantID)
+        }
+
+        // Use Fetch cache mode instead of custom request headers to avoid CORS preflight failures
+        // on deployments that don't allow `Cache-Control` in Access-Control-Allow-Headers.
+        const resp = await fetch(url.toString(), { cache: "no-store" })
+        if (!resp.ok) {
+            throw new Error("Failed to load password policy")
+        }
+
+        return resp.json()
     }
 
     // --- OAuth2 PKCE Flow ---
@@ -356,7 +458,11 @@ export class AuthClient {
 
     // --- Direct Credential Login ---
 
-    async loginWithCredentials(email: string, password: string): Promise<User> {
+    /**
+     * Login with email/password.
+     * Returns User on success, or MFARequiredResult when second factor is required.
+     */
+    async loginWithPassword(email: string, password: string): Promise<User | MFARequiredResult> {
         const body = JSON.stringify({
             tenant_id: this.tenantID,
             client_id: this.clientID,
@@ -379,12 +485,32 @@ export class AuthClient {
             const errBody = await resp.json().catch(() => ({}))
             const err = parseAPIError(resp.status, errBody)
             if (err instanceof MFARequiredError) {
+                const preferredFactor = toMFAMethodType(err.preferredFactor)
+                this.mfa.setChallenge(err.mfaToken, mapFactorList(err.availableFactors), preferredFactor || undefined)
                 this.emitter.emit("MFA_REQUIRED", null)
             }
             throw err
         }
 
-        const tokenData: TokenResponse = await resp.json()
+        const payload = await resp.json().catch(() => ({} as unknown))
+
+        if (isMFARequiredResponse(payload)) {
+            const availableFactors = mapFactorList(payload.available_factors)
+            const preferredFactor = toMFAMethodType(payload.preferred_factor)
+
+            this.mfa.setChallenge(payload.mfa_token, availableFactors, preferredFactor || undefined)
+
+            return {
+                requiresMFA: true,
+                mfaToken: payload.mfa_token,
+                challengeToken: payload.mfa_token,
+                availableFactors,
+                availableMethods: mapMethods(availableFactors),
+                preferredFactor: preferredFactor || undefined,
+            }
+        }
+
+        const tokenData = payload as TokenResponse
         this.tokenManager.setTokens(tokenData)
 
         const user = await this.getUser()
@@ -392,6 +518,16 @@ export class AuthClient {
 
         this.emitter.emit("SIGNED_IN", this.tokenManager.buildSession())
         return user
+    }
+
+    /** Backward-compatible alias that throws MFARequiredError on challenge responses. */
+    async loginWithCredentials(email: string, password: string): Promise<User> {
+        const result = await this.loginWithPassword(email, password)
+        if (isMFARequiredResult(result)) {
+            this.emitter.emit("MFA_REQUIRED", null)
+            throw new MFARequiredError(result.mfaToken, result.availableFactors, result.preferredFactor)
+        }
+        return result
     }
 
     // --- Registration ---
@@ -457,18 +593,77 @@ export class AuthClient {
     // --- Logout ---
 
     logout(returnTo?: string): void {
+        const storedTokens = this.tokenManager.getStoredTokens()
+        const accessToken = storedTokens?.access_token
+        const refreshToken = storedTokens?.refresh_token
+
         this.tokenManager.clearTokens()
         this.emitter.emit("SIGNED_OUT", null)
 
         if (typeof window === "undefined") return
 
         const target = returnTo || window.location.origin
+        void this.logoutWithServer(target, accessToken, refreshToken)
+    }
 
-        const form = document.createElement("form")
-        form.method = "POST"
-        form.action = `${this.domain}/v2/session/logout?return_to=${encodeURIComponent(target)}`
-        document.body.appendChild(form)
-        form.submit()
+    private async logoutWithServer(target: string, accessToken?: string, refreshToken?: string): Promise<void> {
+        const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+        }
+
+        if (accessToken) {
+            headers.Authorization = `Bearer ${accessToken}`
+        }
+
+        const csrfToken = await this.fetchCSRFToken()
+        if (csrfToken) {
+            headers["X-CSRF-Token"] = csrfToken
+        }
+
+        const payload: Record<string, string> = {
+            client_id: this.clientID,
+            post_logout_redirect_uri: target,
+        }
+        if (this.tenantID) payload.tenant_id = this.tenantID
+        if (refreshToken) payload.refresh_token = refreshToken
+
+        let finalRedirect = target
+        try {
+            const resp = await fetch(`${this.domain}${SDK_ROUTES.AUTH_LOGOUT}`, {
+                method: "POST",
+                headers,
+                credentials: "include",
+                body: JSON.stringify(payload),
+            })
+
+            if (resp.ok && resp.status === 200) {
+                const body = await resp.json().catch(() => null) as { post_logout_redirect_uri?: string } | null
+                if (body?.post_logout_redirect_uri) {
+                    finalRedirect = body.post_logout_redirect_uri
+                }
+            }
+        } catch {
+            // No-op: local logout already happened.
+        }
+
+        if (typeof window !== "undefined" && finalRedirect) {
+            window.location.assign(finalRedirect)
+        }
+    }
+
+    private async fetchCSRFToken(): Promise<string | null> {
+        try {
+            const resp = await fetch(`${this.domain}${SDK_ROUTES.CSRF}`, {
+                method: "GET",
+                credentials: "include",
+            })
+            if (!resp.ok) return null
+
+            const body = await resp.json().catch(() => null) as { csrf_token?: string; csrfToken?: string } | null
+            return body?.csrf_token || body?.csrfToken || null
+        } catch {
+            return null
+        }
     }
 
     /** Logout from all sessions/devices */
@@ -483,7 +678,7 @@ export class AuthClient {
             return
         }
 
-        await fetch(`${this.domain}/v2/auth/logout-all`, {
+        await fetch(`${this.domain}${SDK_ROUTES.AUTH_LOGOUT_ALL}`, {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
         }).catch(() => { })
@@ -514,8 +709,16 @@ export class AuthClient {
 
     // --- Providers ---
 
-    /** Get available auth providers for the current tenant */
-    async getProviders(): Promise<string[]> {
+    /**
+     * Get available auth providers for the current client/tenant.
+     * Returns the full provider status, including `ready`, `reason`, and `start_url`.
+     * Filter by `ready: true` to show only providers that are fully configured.
+     *
+     * @example
+     * const providers = await client.getProviders()
+     * const socialProviders = providers.filter(p => p.ready && p.name !== 'password')
+     */
+    async getProviders(): Promise<ProviderStatus[]> {
         let tenantId = this.tenantID
         if (!tenantId) {
             const config = await this.getTenantConfig()
@@ -528,7 +731,7 @@ export class AuthClient {
 
         const resp = await fetch(url.toString())
         if (!resp.ok) return []
-        const data = await resp.json()
+        const data = await resp.json() as { providers?: ProviderStatus[] }
         return data.providers || []
     }
 

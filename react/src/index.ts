@@ -1,9 +1,13 @@
 export * from "./context";
 export * from "./hooks/useRole";
+export * from "./hooks/usePasswordless";
+export * from "./hooks/useUser";
+export * from "./hooks/useMFA";
 export * from "./components/Protect";
 export * from "./components/AuthGuard";
 export * from "./components/SignIn";
 export * from "./components/SignUp";
+export * from "./components/PasswordRequirements";
 export * from "./components/CompleteProfile";
 export * from "./components/ForgotPassword";
 export * from "./components/ResetPassword";
@@ -19,6 +23,7 @@ export * from "./components/SignInButton";
 export * from "./components/SignUpButton";
 export * from "./components/MFAChallenge";
 export * from "./components/MFASetup";
+export * from "./components/FactorSelectorChallenge";
 export * from "./components/AuthError";
 
 // Theme exports

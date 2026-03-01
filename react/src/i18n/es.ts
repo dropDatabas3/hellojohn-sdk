@@ -27,7 +27,7 @@ export const es: Locale = {
     emailLabel: "Correo electrónico",
     emailPlaceholder: "tu@email.com",
     passwordLabel: "Contraseña",
-    passwordPlaceholder: "Mínimo 6 caracteres",
+    passwordPlaceholder: "Mínimo {{min}} caracteres",
     confirmPasswordLabel: "Confirmar contraseña",
     confirmPasswordPlaceholder: "Repite tu contraseña",
     submitButton: "Crear Cuenta",
@@ -39,7 +39,7 @@ export const es: Locale = {
     signInLink: "Inicia sesión",
     stepIndicator: "Paso {{step}} de {{total}}",
     additionalInfo: "Información Adicional",
-    passwordMinLength: "La contraseña debe tener mínimo 6 caracteres",
+    passwordMinLength: "La contraseña debe tener mínimo {{min}} caracteres",
     passwordMismatch: "Las contraseñas no coinciden",
     verifyEmailTitle: "Verifica tu correo",
     verifyEmailMessage: "Hemos enviado un enlace de confirmación a <strong>{{email}}</strong>. Por favor revisa tu bandeja de entrada.",
@@ -72,7 +72,7 @@ export const es: Locale = {
     title: "Nueva Contraseña",
     subtitle: "Ingresa tu nueva contraseña",
     newPasswordLabel: "Nueva contraseña",
-    newPasswordPlaceholder: "Mínimo 6 caracteres",
+    newPasswordPlaceholder: "Mínimo {{min}} caracteres",
     confirmPasswordLabel: "Confirmar contraseña",
     confirmPasswordPlaceholder: "Repetí tu contraseña",
     submitButton: "Guardar nueva contraseña",
@@ -179,3 +179,5 @@ export const es: Locale = {
     hide: "Ocultar",
   },
 }
+
+

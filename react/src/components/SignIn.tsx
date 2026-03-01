@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { MFARequiredError, type MFAMethod, type MFAMethodType } from "@hellojohn/js";
 import { useAuth } from "../context";
 import { useI18n } from "../i18n";
 import { ThemeName, getTheme } from "../lib/themes";
+import { FactorSelectorChallenge } from "./FactorSelectorChallenge";
 
 export interface SignInProps {
     onSuccess?: () => void;
@@ -29,6 +31,25 @@ export interface SignInProps {
     };
 }
 
+interface PendingMFAChallenge {
+    token: string;
+    methods: MFAMethod[];
+    preferredFactor?: MFAMethodType;
+}
+
+function toMFAMethodType(value: unknown): MFAMethodType | null {
+    if (value !== "totp" && value !== "sms" && value !== "email") {
+        return null;
+    }
+    return value;
+}
+
+function methodLabel(type: MFAMethodType): string {
+    if (type === "totp") return "Authenticator App";
+    if (type === "sms") return "SMS";
+    return "Email";
+}
+
 /**
  * SignIn component with built-in theming support.
  * 
@@ -53,7 +74,7 @@ export function SignIn({
     glassmorphism = false,
     customStyles,
 }: SignInProps) {
-    const { loginWithCredentials, loginWithSocialProvider, config, isLoading, isAuthenticated, client } = useAuth();
+    const { loginWithCredentials, loginWithSocialProvider, config, providerStatus, isLoading, isAuthenticated, client } = useAuth();
     const i18n = useI18n();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -62,6 +83,7 @@ export function SignIn({
     const [verificationNeeded, setVerificationNeeded] = useState(false);
     const [resendStatus, setResendStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
     const [showPassword, setShowPassword] = useState(false);
+    const [pendingMFA, setPendingMFA] = useState<PendingMFAChallenge | null>(null);
     const [mounted, setMounted] = useState(false);
     const [systemDark, setSystemDark] = useState(false);
 
@@ -97,6 +119,7 @@ export function SignIn({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
+        setPendingMFA(null);
         setSubmitting(true);
         try {
             await loginWithCredentials(email, password);
@@ -105,13 +128,41 @@ export function SignIn({
             } else {
                 window.location.href = redirectTo;
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            if (err instanceof MFARequiredError) {
+                const factors = err.availableFactors
+                    .map((factor) => toMFAMethodType(factor))
+                    .filter((factor): factor is MFAMethodType => factor !== null);
+                const methods = factors.length > 0
+                    ? factors.map((factor) => ({ type: factor, label: methodLabel(factor) }))
+                    : [{ type: "totp" as const, label: methodLabel("totp") }];
+                const preferredFactor = toMFAMethodType(err.preferredFactor);
+
+                setPendingMFA({
+                    token: err.mfaToken,
+                    methods,
+                    preferredFactor: preferredFactor || undefined,
+                });
+                setVerificationNeeded(false);
+                setError("");
+                return;
+            }
+
+            const errorCode =
+                typeof err === "object" &&
+                err !== null &&
+                "error" in err &&
+                typeof (err as { error?: unknown }).error === "string"
+                    ? (err as { error: string }).error
+                    : "";
+            const errorMessage = err instanceof Error ? err.message : "Login failed";
+
             // Check for verification error (1211 or string match)
-            if (err.error === "email_not_verified" || (err.message && err.message.toLowerCase().includes("verificar"))) {
+            if (errorCode === "email_not_verified" || errorMessage.toLowerCase().includes("verificar")) {
                 setVerificationNeeded(true);
                 setError(i18n.signIn.verificationNeeded);
             } else {
-                setError(err.message || "Login failed");
+                setError(errorMessage);
             }
         } finally {
             setSubmitting(false);
@@ -141,10 +192,6 @@ export function SignIn({
             console.error("[SignIn] Resend error", e);
             setResendStatus("error");
         }
-    };
-
-    const handleGoogleLogin = () => {
-        loginWithSocialProvider("google");
     };
 
     // Styles
@@ -258,7 +305,71 @@ export function SignIn({
         transition: theme.styles.transition,
     };
 
-    const hasGoogle = config?.social_providers?.some(p => p.toLowerCase() === "google");
+    const socialButtonContentStyle: React.CSSProperties = {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
+    };
+
+    /**
+     * Derive the list of social providers to display.
+     * Prefer `providerStatus` (real readiness from /v2/auth/providers) over `config.social_providers`.
+     * Only providers with `ready: true` are shown — never show a button for a misconfigured provider.
+     * Falls back to config.social_providers names if providerStatus hasn't loaded yet.
+     */
+    const socialProviders = useMemo(() => {
+        if (providerStatus.length > 0) {
+            // Use real readiness data from backend
+            return providerStatus
+                .filter(p => p.ready && p.name !== "password")
+                .map(p => p.name);
+        }
+        // Fallback: use config social_providers (may include not-ready providers)
+        const providers = config?.social_providers || [];
+        const unique = new Set<string>();
+        for (const provider of providers) {
+            const normalized = provider.toLowerCase().trim();
+            if (!normalized || normalized === "password") continue;
+            unique.add(normalized);
+        }
+        return Array.from(unique);
+    }, [providerStatus, config?.social_providers]);
+    const providerLabel = (provider: string) => {
+        const labels: Record<string, string> = {
+            google: "Google",
+            github: "GitHub",
+            facebook: "Facebook",
+            discord: "Discord",
+            microsoft: "Microsoft",
+            linkedin: "LinkedIn",
+            apple: "Apple",
+            gitlab: "GitLab",
+        };
+        return labels[provider] || (provider.charAt(0).toUpperCase() + provider.slice(1));
+    };
+
+    const SocialIcon = ({ provider }: { provider: string }) => {
+        if (provider === "google") {
+            return (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                </svg>
+            );
+        }
+        if (provider === "github") {
+            return (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill={theme.colors.inputText}>
+                    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.379.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+                </svg>
+            );
+        }
+        return null;
+    };
+
     const hasSMTP = config?.features?.smtp_enabled;
 
     if (isLoading) {
@@ -266,6 +377,71 @@ export function SignIn({
             <div style={{ ...containerStyle, justifyContent: "center", padding: "40px" }}>
                 <div style={{ color: theme.colors.textMuted, animation: "pulse 2s infinite" }}>
                     {i18n.common.loading}
+                </div>
+            </div>
+        );
+    }
+
+    if (pendingMFA) {
+        const mfaContent = (
+            <>
+                <div style={{ textAlign: "center", marginBottom: "24px" }}>
+                    <h1 style={{
+                        fontSize: "24px",
+                        fontWeight: 700,
+                        color: theme.colors.textPrimary,
+                        margin: 0,
+                    }}>
+                        {config?.tenant_name || config?.client_name || i18n.signIn.title}
+                    </h1>
+                    <p style={{
+                        fontSize: "14px",
+                        color: theme.colors.textMuted,
+                        marginTop: "6px",
+                    }}>
+                        Two-factor authentication is required to continue
+                    </p>
+                </div>
+
+                <FactorSelectorChallenge
+                    challengeToken={pendingMFA.token}
+                    availableMethods={pendingMFA.methods}
+                    preferredFactor={pendingMFA.preferredFactor}
+                    onSuccess={() => {
+                        client?.mfa.clearChallenge();
+                        setPendingMFA(null);
+                        setError("");
+                        if (onSuccess) {
+                            onSuccess();
+                            return;
+                        }
+                        window.location.href = redirectTo;
+                    }}
+                    onCancel={() => {
+                        client?.mfa.clearChallenge();
+                        setPendingMFA(null);
+                        setError("");
+                    }}
+                />
+            </>
+        );
+
+        if (backgroundImage) {
+            return (
+                <div style={containerStyle}>
+                    <div style={bgStyle} />
+                    <div style={overlayStyle} />
+                    <div style={cardStyle}>
+                        {mfaContent}
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div style={containerStyle}>
+                <div style={cardStyle}>
+                    {mfaContent}
                 </div>
             </div>
         );
@@ -338,23 +514,25 @@ export function SignIn({
             )}
 
             {/* Social Login */}
-            {hasGoogle && (
+            {socialProviders.length > 0 && (
                 <div style={{ marginBottom: "24px" }}>
-                    <button
-                        type="button"
-                        onClick={handleGoogleLogin}
-                        style={socialButtonStyle}
-                        onMouseEnter={(e) => e.currentTarget.style.background = theme.colors.buttonSecondaryHover}
-                        onMouseLeave={(e) => e.currentTarget.style.background = theme.colors.buttonSecondary}
-                    >
-                        <svg width="20" height="20" viewBox="0 0 24 24">
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                        </svg>
-                        {i18n.signIn.socialButtonPrefix} Google
-                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {socialProviders.map((provider) => (
+                            <button
+                                key={provider}
+                                type="button"
+                                onClick={() => loginWithSocialProvider(provider)}
+                                style={socialButtonStyle}
+                                onMouseEnter={(e) => e.currentTarget.style.background = theme.colors.buttonSecondaryHover}
+                                onMouseLeave={(e) => e.currentTarget.style.background = theme.colors.buttonSecondary}
+                            >
+                                <span style={socialButtonContentStyle}>
+                                    <SocialIcon provider={provider} />
+                                    <span>{i18n.signIn.socialButtonPrefix} {providerLabel(provider)}</span>
+                                </span>
+                            </button>
+                        ))}
+                    </div>
                     <div style={{
                         display: "flex",
                         alignItems: "center",

@@ -100,15 +100,13 @@ describe('createMFAClient', () => {
   // challengeTOTP
   // -------------------------------------------------------------------------
   describe('challengeTOTP', () => {
-    it('calls POST /v2/mfa/totp/challenge and returns challenge_id', async () => {
-      vi.stubGlobal('fetch', mockFetchOk({ challenge_id: 'ch-abc' }))
+    it('returns the active challenge token when TOTP is selected', async () => {
+      vi.stubGlobal('fetch', vi.fn())
       const mfa = createMFAClient(DOMAIN, getAccessToken)
+      mfa.setChallenge('ch-abc', ['totp'], 'totp')
       const result = await mfa.challengeTOTP()
 
-      const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
-      expect(url).toBe(`${DOMAIN}/v2/mfa/totp/challenge`)
-      expect(init.method).toBe('POST')
-      expect(init.body).toBeUndefined()
+      expect(fetch).not.toHaveBeenCalled()
       expect(result.challenge_id).toBe('ch-abc')
     })
   })
@@ -117,7 +115,7 @@ describe('createMFAClient', () => {
   // solveTOTP
   // -------------------------------------------------------------------------
   describe('solveTOTP', () => {
-    it('calls POST /v2/mfa/totp/challenge with {challenge_id, code}', async () => {
+    it('calls POST /v2/mfa/totp/challenge with {mfa_token, code}', async () => {
       const tokenResp = {
         access_token: 'at_new',
         scope: 'openid',
@@ -131,7 +129,7 @@ describe('createMFAClient', () => {
       const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
       expect(url).toBe(`${DOMAIN}/v2/mfa/totp/challenge`)
       expect(JSON.parse(init.body)).toEqual({
-        challenge_id: 'ch-42',
+        mfa_token: 'ch-42',
         code: '654321',
       })
       expect(result.access_token).toBe('at_new')
@@ -195,7 +193,7 @@ describe('createMFAClient', () => {
       await expect(mfa.verifyTOTP('000000')).rejects.toThrow('The TOTP code is invalid')
     })
 
-    it('includes Bearer token from getAccessToken in all requests', async () => {
+    it('includes Bearer token in authenticated requests', async () => {
       // Must create a new Response for each call, otherwise body gets consumed
       vi.stubGlobal('fetch', vi.fn(() =>
         new Response(JSON.stringify({}), {
@@ -207,12 +205,11 @@ describe('createMFAClient', () => {
 
       await mfa.enrollTOTP()
       await mfa.verifyTOTP('123')
-      await mfa.challengeTOTP()
-      await mfa.solveTOTP('ch', '123')
       await mfa.disableTOTP('123')
       await mfa.rotateRecoveryCodes()
+      await mfa.listMethods()
 
-      expect(getAccessToken).toHaveBeenCalledTimes(6)
+      expect(getAccessToken).toHaveBeenCalledTimes(5)
       for (const call of (fetch as ReturnType<typeof vi.fn>).mock.calls) {
         expect(call[1].headers.Authorization).toBe(`Bearer ${ACCESS_TOKEN}`)
       }

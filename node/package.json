@@ -26,6 +26,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "type-check": "tsc --noEmit",
     "test": "vitest run",
     "prepublishOnly": "npm run build && npm test"
   },

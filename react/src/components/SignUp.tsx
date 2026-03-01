@@ -1,10 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../context";
 import { useI18n, t } from "../i18n";
-import { RegisterOptions } from "@hellojohn/js";
+import { PasswordPolicy, RegisterOptions } from "@hellojohn/js";
 import { ThemeName, getTheme } from "../lib/themes";
 import { PhoneInput } from "./PhoneInput";
 import { CountrySelect } from "./CountrySelect";
+import {
+    DEFAULT_PASSWORD_POLICY,
+    PasswordRequirements,
+    evaluatePasswordPolicy,
+    hasVisiblePasswordRequirements,
+} from "./PasswordRequirements";
 
 export interface SignUpProps {
     onSuccess?: () => void;
@@ -34,7 +40,7 @@ export function SignUp({
     glassmorphism = false,
     customStyles,
 }: SignUpProps) {
-    const { register, loginWithSocialProvider, config, client, isLoading, isAuthenticated } = useAuth();
+    const { register, loginWithSocialProvider, config, providerStatus, client, isLoading, isAuthenticated } = useAuth();
     const i18n = useI18n();
     const [formData, setFormData] = useState<Record<string, string>>({});
     const [success, setSuccess] = useState(false);
@@ -47,11 +53,13 @@ export function SignUp({
     const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
     const [passwordError, setPasswordError] = useState("");
     const [shake, setShake] = useState(false);
+    const [isPasswordFocused, setIsPasswordFocused] = useState(false);
 
     // New states for verification flow
     const [showVerification, setShowVerification] = useState(false);
     const [resendStatus, setResendStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
     const [emailForVerification, setEmailForVerification] = useState("");
+    const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy>(DEFAULT_PASSWORD_POLICY);
 
     useEffect(() => {
         setMounted(true);
@@ -74,6 +82,28 @@ export function SignUp({
     const hasCustomFields = customFields.length > 0;
     const totalSteps = hasCustomFields ? 2 : 1;
 
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadPasswordPolicy = async () => {
+            if (!client || typeof client.getPasswordPolicy !== "function") return;
+
+            try {
+                const policy = await client.getPasswordPolicy(config?.tenant_slug);
+                if (!cancelled && policy) {
+                    setPasswordPolicy({ ...DEFAULT_PASSWORD_POLICY, ...policy });
+                }
+            } catch (err) {
+                console.warn("Failed to load password policy", err);
+            }
+        };
+
+        void loadPasswordPolicy();
+        return () => {
+            cancelled = true;
+        };
+    }, [client, config?.tenant_slug]);
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData({ ...formData, [name]: value });
@@ -85,6 +115,26 @@ export function SignUp({
         setFormData(prev => ({ ...prev, [name]: value }));
         if (fieldErrors[name]) setFieldErrors(prev => ({ ...prev, [name]: false }));
     };
+
+    const passwordRules = evaluatePasswordPolicy(
+        formData.password || "",
+        formData.email || "",
+        formData.name || "",
+        passwordPolicy,
+    );
+
+    const showPasswordRequirements = hasVisiblePasswordRequirements(passwordPolicy);
+    const effectiveMinPasswordLength =
+        passwordPolicy.min_length > 0 ? passwordPolicy.min_length : DEFAULT_PASSWORD_POLICY.min_length;
+    const passwordPlaceholder = t(i18n.signUp.passwordPlaceholder, { min: String(effectiveMinPasswordLength) });
+
+    const canSubmitStep1 =
+        !!formData.name?.trim() &&
+        !!formData.email?.trim() &&
+        !!formData.password?.trim() &&
+        !!formData.confirmPassword?.trim() &&
+        passwordRules.every((rule) => rule.ok) &&
+        formData.password === formData.confirmPassword;
 
     const triggerShake = () => {
         setShake(true);
@@ -101,8 +151,9 @@ export function SignUp({
         if (!formData.password?.trim()) { errors.password = true; hasError = true; }
         if (!formData.confirmPassword?.trim()) { errors.confirmPassword = true; hasError = true; }
 
-        if (formData.password && formData.password.length < 6) {
-            setPasswordError(i18n.signUp.passwordMinLength);
+        const failedRule = passwordRules.find((rule) => !rule.ok);
+        if (failedRule) {
+            setPasswordError(failedRule.label);
             errors.password = true;
             hasError = true;
         } else if (formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword) {
@@ -272,6 +323,14 @@ export function SignUp({
         color: theme.colors.textSecondary,
         border: `1.5px solid ${theme.colors.inputBorder}`,
         boxShadow: "none",
+        gap: "10px",
+    };
+
+    const socialButtonContentStyle: React.CSSProperties = {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
     };
 
     const labelStyle: React.CSSProperties = {
@@ -282,7 +341,60 @@ export function SignUp({
         marginBottom: "6px",
     };
 
-    const hasGoogle = config?.social_providers?.some(p => p.toLowerCase() === "google");
+    /**
+     * Derive the list of social providers to display.
+     * Prefer `providerStatus` (real readiness from /v2/auth/providers) over `config.social_providers`.
+     * Only providers with `ready: true` are shown — never show a button for a misconfigured provider.
+     */
+    const socialProviders = useMemo(() => {
+        if (providerStatus.length > 0) {
+            return providerStatus
+                .filter(p => p.ready && p.name !== "password")
+                .map(p => p.name);
+        }
+        const providers = config?.social_providers || [];
+        const unique = new Set<string>();
+        for (const provider of providers) {
+            const normalized = provider.toLowerCase().trim();
+            if (!normalized || normalized === "password") continue;
+            unique.add(normalized);
+        }
+        return Array.from(unique);
+    }, [providerStatus, config?.social_providers]);
+    const providerLabel = (provider: string) => {
+        const labels: Record<string, string> = {
+            google: "Google",
+            github: "GitHub",
+            facebook: "Facebook",
+            discord: "Discord",
+            microsoft: "Microsoft",
+            linkedin: "LinkedIn",
+            apple: "Apple",
+            gitlab: "GitLab",
+        };
+        return labels[provider] || (provider.charAt(0).toUpperCase() + provider.slice(1));
+    };
+
+    const SocialIcon = ({ provider }: { provider: string }) => {
+        if (provider === "google") {
+            return (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                </svg>
+            );
+        }
+        if (provider === "github") {
+            return (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill={theme.colors.inputText}>
+                    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.379.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+                </svg>
+            );
+        }
+        return null;
+    };
 
     useEffect(() => {
         if (typeof document !== "undefined") {
@@ -425,25 +537,33 @@ export function SignUp({
         </div>
     );
 
+
     const renderStep1 = () => (
         <>
             {renderHeader()}
 
-            {hasGoogle && (
+            {socialProviders.length > 0 && (
                 <>
-                    <button type="button" onClick={() => loginWithSocialProvider("google")} style={{ ...secondaryButtonStyle, marginBottom: "16px" }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" style={{ marginRight: "10px" }}>
-                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                        </svg>
-                        {i18n.signIn.socialButtonPrefix} Google
-                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                        {socialProviders.map((provider) => (
+                            <button
+                                key={provider}
+                                type="button"
+                                onClick={() => loginWithSocialProvider(provider)}
+                                style={secondaryButtonStyle}
+                                onMouseEnter={(e) => e.currentTarget.style.background = theme.colors.buttonSecondaryHover}
+                                onMouseLeave={(e) => e.currentTarget.style.background = theme.colors.buttonSecondary}
+                            >
+                                <span style={socialButtonContentStyle}>
+                                    <SocialIcon provider={provider} />
+                                    <span>{i18n.signIn.socialButtonPrefix} {providerLabel(provider)}</span>
+                                </span>
+                            </button>
+                        ))}
+                    </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
                         <div style={{ flex: 1, height: "1px", background: theme.colors.inputBorder }} />
                         <span style={{ fontSize: "12px", color: theme.colors.textMuted, textTransform: "uppercase", fontWeight: 500 }}>{i18n.signIn.socialDivider}</span>
-                        <div style={{ flex: 1, height: "1px", background: theme.colors.inputBorder }} />
                     </div>
                 </>
             )}
@@ -461,17 +581,28 @@ export function SignUp({
             <div style={{ marginBottom: "14px" }}>
                 <label style={labelStyle}>{i18n.signUp.passwordLabel} <span style={{ color: "#ef4444" }}>*</span></label>
                 <div style={{ position: "relative" }}>
-                    <input name="password" type={showPassword ? "text" : "password"} onChange={handleChange} value={formData.password || ""} placeholder={i18n.signUp.passwordPlaceholder} style={{ ...getInputStyle("password"), paddingRight: "44px" }} />
+                    <input name="password" type={showPassword ? "text" : "password"} onChange={handleChange} onFocus={() => setIsPasswordFocused(true)} onBlur={() => setIsPasswordFocused(false)} value={formData.password || ""} placeholder={passwordPlaceholder} style={{ ...getInputStyle("password"), paddingRight: "44px" }} />
                     <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: "4px", cursor: "pointer", color: theme.colors.textMuted }}>
                         <EyeIcon visible={showPassword} />
                     </button>
                 </div>
             </div>
 
+            {showPasswordRequirements && (
+                <PasswordRequirements
+                    password={formData.password || ""}
+                    email={formData.email || ""}
+                    name={formData.name || ""}
+                    policy={passwordPolicy}
+                    theme={theme}
+                    borderRadius={borderRadius}
+                />
+            )}
+
             <div style={{ marginBottom: passwordError ? "8px" : "20px" }}>
                 <label style={labelStyle}>{i18n.signUp.confirmPasswordLabel} <span style={{ color: "#ef4444" }}>*</span></label>
                 <div style={{ position: "relative" }}>
-                    <input name="confirmPassword" type={showConfirmPassword ? "text" : "password"} onChange={handleChange} value={formData.confirmPassword || ""} placeholder={i18n.signUp.confirmPasswordPlaceholder} style={{ ...getInputStyle("confirmPassword"), paddingRight: "44px" }} />
+                    <input name="confirmPassword" type={showConfirmPassword ? "text" : "password"} onChange={handleChange} onFocus={() => setIsPasswordFocused(true)} onBlur={() => setIsPasswordFocused(false)} value={formData.confirmPassword || ""} placeholder={i18n.signUp.confirmPasswordPlaceholder} style={{ ...getInputStyle("confirmPassword"), paddingRight: "44px" }} />
                     <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} style={{ position: "absolute", right: "12px", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: "4px", cursor: "pointer", color: theme.colors.textMuted }}>
                         <EyeIcon visible={showConfirmPassword} />
                     </button>
@@ -487,8 +618,8 @@ export function SignUp({
                 </div>
             )}
 
-            <button type="submit" disabled={submitting} style={buttonStyle}>
-                {submitting ? i18n.signUp.processing : hasCustomFields ? i18n.signUp.continueButton + " →" : i18n.signUp.submitButton}
+            <button type="submit" disabled={submitting || !canSubmitStep1} style={buttonStyle}>
+                {submitting ? i18n.signUp.processing : hasCustomFields ? i18n.signUp.continueButton + " ->" : i18n.signUp.submitButton}
             </button>
         </>
     );
@@ -557,3 +688,9 @@ export function SignUp({
         </div>
     );
 }
+
+
+
+
+
+

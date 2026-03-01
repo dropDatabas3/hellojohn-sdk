@@ -1244,7 +1244,7 @@ A standalone logout function that works without the React context. Clears all lo
 ```tsx
 import { byeJohn } from "@hellojohn/react"
 
-byeJohn()                  // Clear tokens, POST /v2/session/logout, reload
+byeJohn()                  // Clear tokens, GET /v2/csrf, POST /v2/auth/logout, reload
 byeJohn("/goodbye")        // Same, but redirect to /goodbye after
 ```
 

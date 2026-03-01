@@ -1,0 +1,39 @@
+{
+  "name": "@hellojohn/react-native",
+  "version": "1.0.0",
+  "description": "HelloJohn authentication SDK for React Native and Expo",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": false,
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dropDatabas3/hellojohn",
+    "directory": "sdks/react-native"
+  },
+  "peerDependencies": {
+    "expo": "^50.0.0",
+    "react": "^18.0.0",
+    "react-native": "^0.73.0"
+  },
+  "dependencies": {
+    "@hellojohn/js": "file:../js",
+    "expo-auth-session": "^5.0.0",
+    "expo-crypto": "^13.0.0",
+    "expo-secure-store": "^13.0.0",
+    "expo-web-browser": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.79",
+    "expo": "^50.0.21",
+    "react": "18.2.0",
+    "react-native": "0.73.11",
+    "typescript": "^5.9.3"
+  }
+}
